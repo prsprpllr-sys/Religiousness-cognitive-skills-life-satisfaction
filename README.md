@@ -1,1 +1,2 @@
 # Religiousness-cognitive-skills-life-satisfaction
+This study’s goal is to address this gap by examining how religiousness and cognitive skills interact with life satisfaction among older adults in Europe. For this purpose, the study used Wave 7 data from the Survey of Health, Ageing and Retirement in Europe (SHARE; SHARE-ERIC, 2024) was utilised as it featured a large, cross-national European sample. 
