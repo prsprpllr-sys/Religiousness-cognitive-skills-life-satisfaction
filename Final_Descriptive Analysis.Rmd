@@ -1,0 +1,678 @@
+---
+title: "Thesis_Descriptive Analysis_new"
+author: "Juyoung Kim"
+date: "`r Sys.Date()`"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Loading
+
+```{r}
+#library
+library(dplyr)
+library(psych)
+library(knitr)
+library(ggplot2)
+library(tidyr)
+```
+
+```{r}
+df <- read.csv("df_cleaned.csv")
+```
+
+```{r}
+str(df)
+colnames(df)
+```
+
+Need to rename some categorical variables: country, income_group
+
+```{r}
+df <- df %>%
+  mutate(
+    income_group = factor(income_group,
+                          levels = 1:4,
+                          labels = c("1st Quartile", "2nd Quartile", "3rd Quartile", "4th Quartile"))
+  )
+```
+
+**Three measures of descriptive statistics** [1]
+
+i)  Measures of central tendency (mean, median, mode)
+
+ii) Measures of variability (variance, SD)
+
+iii) Measures of Frequency distribution (count)
+
+```{r}
+df <- df %>%
+  mutate(age_group = factor(age_group, levels = c("Under 65", "65 to 74", "Plus 75")))
+```
+
+# 0. Check - Childhood Religion Importance (CC728\_)
+
+```{r}
+# Count by country
+df %>%
+  group_by(country) %>%
+  summarise(valid = sum(!is.na(child_sig))) %>%
+  arrange(desc(valid))
+```
+
+```{r}
+# total valid count for child_sig
+total_valid <- sum(!is.na(df$child_sig))
+
+# count and proportion by country
+df %>%
+  group_by(country) %>%
+  summarise(
+    valid = sum(!is.na(child_sig)),
+    percentage = round(100 * valid / total_valid, 1)
+  ) %>%
+  arrange(desc(valid)) %>%
+  knitr::kable(caption = "Number and Percentage of Valid 'child_sig' Responses by Country")
+```
+
+# 1. Continuous Variables - Summary Statistics
+
+```{r}
+# Descriptive statistics
+describe(df[, c("cog_index", "ls", "age", "income")])
+```
+
+```{r}
+table(df$age)
+```
+
+# 2. Categorical Variables - Frequencies
+
+## Sample Characteristics
+
+```{r}
+sample_vars <- c("age_group","gender")
+
+sample_summary <- do.call(rbind, lapply(sample_vars, function(var) {
+  tbl <- table(df[[var]])
+  pct <- round(100 * prop.table(tbl), 1)
+  data.frame(
+    Variable = var,
+    Category = names(tbl),
+    Frequency = as.numeric(tbl),
+    Percentage = paste0(pct, "%")
+  )
+}))
+
+kable(sample_summary, caption = "Frequency & Percentage of Age Group & Gender", align = "llcc")
+```
+
+## Categorical variables
+
+```{r}
+cat_vars <- c("child_sig","age_group","gender", "country", "edu_label", "edu_group", "health_label", "income_group", "rel_above", "rel_below", "cog_above", "cog_below")
+
+cat_summary <- do.call(rbind, lapply(cat_vars, function(var) {
+  tbl <- table(df[[var]])
+  pct <- round(100 * prop.table(tbl), 1)
+  data.frame(
+    Variable = var,
+    Category = names(tbl),
+    Frequency = as.numeric(tbl),
+    Percentage = paste0(pct, "%")
+  )
+}))
+
+kable(cat_summary, caption = "Frequency & Percentage of Categorical Variables", align = "llcc")
+```
+
+```{r}
+cat_vars <- c("child_sig","age_group","gender", "country", "edu_label", "edu_group", "health_label", "income_group", "rel_above", "rel_below", "cog_above", "cog_below")
+
+cat_summary <- do.call(rbind, lapply(cat_vars, function(var) {
+  tbl <- table(df[[var]])
+  pct <- round(100 * prop.table(tbl), 1)
+  data.frame(
+    Variable = var,
+    Category = names(tbl),
+    Frequency = as.numeric(tbl),
+    Percentage = paste0(pct, "%")
+  )
+}))
+
+kable(cat_summary, caption = "Frequency and Percentage of Categorical Variables", align = "llcc")
+```
+
+# 3. Main Variables - Summary Table
+
+```{r}
+summary_table <- data.frame(
+  Variable = c("Religiousness", "Cognitive Index", "Life Satisfaction"),
+  Mean = sapply(df[, c("child_sig", "cog_index", "ls")], mean),
+  SD = sapply(df[, c("child_sig", "cog_index", "ls")], sd),
+  Min = sapply(df[, c("child_sig", "cog_index", "ls")], min),
+  Max = sapply(df[, c("child_sig", "cog_index", "ls")], max)
+)
+
+kable(summary_table, digits = 2, caption = "Descriptive Statistics of Key Variables")
+```
+
+# 4. Visualizations
+
+```{r}
+hist(df$cog_index, main = "Cognitive Index", xlab = "cog_index")
+```
+
+```{r}
+# continuous variables
+par(mfrow = c(2, 2))
+hist(df$cog_index, main = "Cognitive Index", xlab = "cog_index")
+hist(df$ls, main = "Life Satisfaction", xlab = "ls")
+hist(df$age, main = "Age", xlab = "age")
+hist(df$income, main = "Income", xlab = "income")
+```
+
+```{r}
+summary(df$income)
+```
+
+# 5. Country-wise Inspection
+
+```{r}
+# Key continuous variables by country
+country_summary_continuous <- df %>%
+  group_by(country) %>%
+  summarise(
+    mean_ls = round(mean(ls, na.rm = TRUE), 2),
+    sd_ls = round(sd(ls, na.rm = TRUE), 2),
+    mean_cog = round(mean(cog_index, na.rm = TRUE), 2),
+    sd_cog = round(sd(cog_index, na.rm = TRUE), 2),
+    mean_income = round(mean(income, na.rm = TRUE), 2),
+    sd_income = round(sd(income, na.rm = TRUE), 2),
+    n = n()
+  )
+
+knitr::kable(country_summary_continuous, caption = "Country-wise Summary of Life Satisfaction, Cognitive Skills, and Income")
+```
+
+```{r}
+ggplot(df, aes(x = ls)) + 
+  geom_histogram(bins = 30, fill = "steelblue", color = "white") +
+  labs(title = "Histogram of Life Satisfaction", x = "Life Satisfaction", y = "Count")
+
+ggplot(df, aes(x = cog_index)) + 
+  geom_histogram(bins = 30, fill = "steelblue", color = "white") +
+  labs(title = "Histogram of Cognitive Index", x = "Cognitive Index", y = "Count")
+
+#boxplots by country 
+ggplot(df, aes(x = country, y = ls)) + 
+  geom_boxplot() + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  labs(title = "Life Satisfaction by Country", x = "Country", y = "Life Satisfaction")
+
+```
+
+```{r}
+# Mean childhood religiousness by country
+mean_relig_by_country <- df %>%
+  group_by(country) %>%
+  summarise(mean_relig = mean(child_sig, na.rm = TRUE)) %>%
+  arrange(mean_relig)
+
+# Plot
+ggplot(mean_relig_by_country, aes(x = reorder(country, mean_relig), y = mean_relig)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  coord_flip() +
+  labs(
+    title = "Average Religious Importance by Country",
+    x = "Country",
+    y = "Mean Childhood Religiousness (1–4 scale)"
+  ) +
+  theme_minimal()
+
+```
+
+```{r}
+# average cognitive index by country
+mean_cog_by_country <- df %>%
+  group_by(country) %>%
+  summarise(mean_cog = mean(cog_index, na.rm = TRUE)) %>%
+  arrange(mean_cog)
+
+# plot
+ggplot(mean_cog_by_country, aes(x = reorder(country, mean_cog), y = mean_cog)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  coord_flip() +
+  labs(
+    title = "Average Cognitive Skills by Country",
+    x = "Country",
+    y = "Mean Cognitive Skills"
+  ) +
+  theme_minimal()
+
+```
+
+```{r}
+# filter to ls is non-missing
+ls_by_country <- df %>%
+  filter(!is.na(ls)) %>%
+  group_by(country) %>%
+  summarise(mean_ls = mean(ls, na.rm = TRUE)) %>%
+  arrange(desc(mean_ls))
+
+ggplot(ls_by_country, aes(x = reorder(country, -mean_ls), y = mean_ls)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  labs(
+    title = "Average Life Satisfaction by Country",
+    x = "Country",
+    y = "Mean Life Satisfaction"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+```{r}
+# filter to make sure income is non-missing
+income_by_country <- df %>%
+  filter(!is.na(income)) %>%
+  group_by(country) %>%
+  summarise(mean_income = mean(income, na.rm = TRUE)) %>%
+  arrange(desc(mean_income))
+
+ggplot(income_by_country, aes(x = reorder(country, -mean_income), y = mean_income)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  labs(
+    title = "Average Monthly Household Income by Country",
+    x = "Country",
+    y = "Mean Income (EUR)"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+```{r}
+# income group counts per country
+income_group_dist <- df %>%
+  filter(!is.na(income_group)) %>%
+  group_by(country, income_group) %>%
+  summarise(n = n()) %>%
+  ungroup()
+
+# Plot proportion within each country
+ggplot(income_group_dist, aes(x = country, y = n, fill = income_group)) +
+  geom_bar(stat = "identity", position = "fill") +
+  labs(
+    title = "Distribution of Income Groups by Country",
+    x = "Country",
+    y = "Proportion",
+    fill = "Income Group"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+```
+
+```{r}
+# reorder educationanl level labels
+df$edu_label <- factor(df$edu_label, 
+                       levels = c("Doctoral or equivalent",
+                                  "Master or equivalent",
+                                  "Bachelor or equivalent",
+                                  "Short-cycle tertiary",
+                                  "Post-secondary non-tertiary",
+                                  "Upper secondary",
+                                  "Lower secondary",
+                                  "Primary",
+                                  "Early childhood"))
+```
+
+```{r}
+edu_level_dist <- df %>%
+  filter(!is.na(edu_label)) %>%
+  group_by(country, edu_label) %>%
+  summarise(n = n()) %>%
+  ungroup()
+
+# barplot
+ggplot(edu_level_dist, aes(x = country, y = n, fill = edu_label)) +
+  geom_bar(stat = "identity", position = "fill") +
+  labs(
+    title = "Distribution of Education Levels by Country",
+    x = "Country",
+    y = "Proportion",
+    fill = "Education Level"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+```{r}
+# reorder edu groups labels
+df$edu_group <- factor(df$edu_group, 
+                           levels = c("High", "Medium", "Low"))
+
+```
+
+```{r}
+#count per country
+edu_group_dist <- df %>%
+  filter(!is.na(edu_group)) %>%
+  group_by(country, edu_group) %>%
+  summarise(n = n()) %>%
+  ungroup()
+
+# Barplot
+ggplot(edu_group_dist, aes(x = country, y = n, fill = edu_group)) +
+  geom_bar(stat = "identity", position = "fill") +
+  labs(
+    title = "Distribution of Education Groups by Country",
+    x = "Country",
+    y = "Proportion",
+    fill = "Education Group"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+```{r}
+# reorders factor levels 
+df$health_label <- factor(df$health_label, 
+                           levels = c("Excellent", "Very good", "Good", "Fair","Poor"))
+
+# count 
+health_dist <- df %>%
+  filter(!is.na(health_label)) %>%
+  group_by(country, health_label) %>%
+  summarise(n = n()) %>%
+  ungroup()
+
+# barplot
+ggplot(health_dist, aes(x = country, y = n, fill = health_label)) +
+  geom_bar(stat = "identity", position = "fill") +
+  labs(
+    title = "Distribution of Self Reported Health by Country",
+    x = "Country",
+    y = "Proportion",
+    fill = "Health Status"
+  ) +
+  theme_minimal() + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+```{r}
+# Average health score by country
+health_by_country <- df %>%
+  filter(!is.na(health)) %>%
+  group_by(country) %>%
+  summarise(mean_health = round(mean(health, na.rm = TRUE), 2)) %>%
+  arrange(desc(mean_health))
+
+# table
+knitr::kable(health_by_country, caption = "Average Self-Reported Health Score by Country")
+
+# bar chart
+ggplot(health_by_country, aes(x = reorder(country, -mean_health), y = mean_health)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  labs(
+    title = "Average Health Score by Country",
+    x = "Country",
+    y = "Mean Health (Lower = Better)"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+# 6. Age group comparison
+
+```{r}
+agegroup_summary <- df %>%
+  group_by(age_group) %>%
+  summarise(
+    n = n(),
+    mean_ls = round(mean(ls, na.rm = TRUE), 2),
+    sd_ls = round(sd(ls, na.rm = TRUE), 2),
+    mean_cog = round(mean(cog_index, na.rm = TRUE), 2),
+    sd_cog = round(sd(cog_index, na.rm = TRUE), 2),
+    mean_income = round(mean(income, na.rm = TRUE), 2),
+    sd_income = round(sd(income, na.rm = TRUE), 2)
+  )
+
+knitr::kable(agegroup_summary, caption = "Summary Statistics by Age Group")
+```
+
+```{r}
+# By Gender & Age Group 
+
+# Religiousness
+ggplot(df, aes(x = age_group, y = child_sig, fill = gender)) +
+  geom_boxplot() +
+  labs(
+    title = "Religiousness by Gender and Age Group",
+    x = "Age Group",
+    y = "Religiousness (1-4 Scale)"
+  ) +
+  theme_minimal() +
+  scale_fill_manual(values = c("skyblue", "pink"))
+
+# Cognitive skills
+ggplot(df, aes(x = age_group, y = cog_index, fill = gender)) +
+  geom_boxplot() +
+  labs(
+    title = "Cognitive Skills by Gender and Age Group",
+    x = "Age Group",
+    y = "Cognitive Skills"
+  ) +
+  theme_minimal() +
+  scale_fill_manual(values = c("skyblue", "pink"))
+
+# Life satisfaction
+ggplot(df, aes(x = age_group, y = ls, fill = gender)) +
+  geom_boxplot() +
+  labs(
+    title = "Life Satisfaction by Gender and Age Group",
+    x = "Age Group",
+    y = "Life Satisfaction (0-10 Scale)"
+  ) +
+  theme_minimal() +
+  scale_fill_manual(values = c("skyblue", "pink"))
+
+
+```
+
+```{r}
+#Religiousness by Age Group
+ggplot(df, aes(x = age_group, y = child_sig)) +
+  geom_boxplot(fill = "steelblue") +
+  labs(title = "Religiousness by Age Group", x = "Age Group", y = "Religiousness") +
+  theme_minimal()   
+
+# Life Satisfaction by Age Group
+ggplot(df, aes(x = age_group, y = ls)) +
+  geom_boxplot(fill = "steelblue") +
+  labs(title = "Life Satisfaction by Age Group", x = "Age Group", y = "Life Satisfaction") +
+  theme_minimal()
+
+# Cognitive Index by Age Group
+ggplot(df, aes(x = age_group, y = cog_index)) +
+  geom_boxplot(fill = "steelblue") +
+  labs(title = "Cognitive Index by Age Group", x = "Age Group", y = "Cognitive Index") +
+  theme_minimal()
+
+# Health by Age Group
+ggplot(df, aes(x = age_group, y = health)) +
+  geom_boxplot(fill = "steelblue") +
+  labs(title = "Health by Age Group", x = "Age Group", y = "Health Status") +
+  theme_minimal()
+
+# Income by Age Group
+ggplot(df, aes(x = age_group, y = income)) +
+  geom_boxplot(fill = "steelblue") +
+  labs(title = "Household Income by Age Group", x = "Age Group", y = "Income (EUR)") +
+  theme_minimal()
+
+```
+
+# 7. Comparison by health status
+
+```{r}
+# Reorder health labels
+df$health_label <- factor(df$health_label, 
+                           levels = c("Poor", "Fair", "Good", "Very good", "Excellent"))
+
+```
+
+```{r}
+ggplot(df, aes(x = health_label, y = child_sig, fill = health_label)) +
+  geom_boxplot() +
+  labs(
+    title = "Religiousness by Self-Reported Health Status",
+    x = "Health Status",
+    y = "Religiousness"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "none")
+```
+
+```{r}
+ggplot(df, aes(x = health_label, y = cog_index, fill = health_label)) +
+  geom_boxplot() +
+  labs(
+    title = "Cognitive Skills by Self-Reported Health Status",
+    x = "Health Status",
+    y = "Cognitive Index"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+```
+
+```{r}
+ggplot(df, aes(x = health_label, y = ls, fill = health_label)) +
+  geom_boxplot() +
+  labs(
+    title = "Life Satisfaction by Self-Reported Health Status",
+    x = "Health Status",
+    y = "Life Satisfaction"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "none")
+```
+
+# 8. Gender-wise inspection
+
+By gender & age group
+
+```{r}
+# Table with counts and percentages
+gender_age_table <- df %>%
+  group_by(age_group, gender) %>%
+  summarise(count = n(), .groups = "drop") %>%
+  mutate(percentage = round(100 * count / sum(count), 1))
+
+kable(gender_age_table, 
+      caption = "Number and Percentage of Participants by Gender and Age Group")
+```
+
+```{r}
+# Create dataset
+gender_age_counts <- df %>%
+  group_by(gender, age_group) %>%
+  summarise(count = n(), .groups = "drop")
+
+# plot 
+ggplot(gender_age_counts, aes(x = age_group, y = count, fill = gender)) +
+  geom_bar(stat = "identity", position = position_dodge(width = 0.9)) +
+  geom_text(aes(label = count), 
+            position = position_dodge(width = 0.9), 
+            vjust = -0.3, size = 3.5) +
+  labs(
+    title = "Number of Participants by Gender and Age Group",
+    x = "Age Group",
+    y = "Number of Participants"
+  ) +
+  theme_minimal() +
+  scale_fill_manual(values = c("skyblue", "pink"))
+
+```
+
+```{r}
+# religiousness
+ggplot(df, aes(x = age_group, y = child_sig, fill = gender)) +
+  geom_boxplot() +
+  labs(
+    title = "Religious Upbringing by Gender and Age Group",
+    x = "Age Group",
+    y = "Religious Upbringing"
+  ) +
+  theme_minimal() +
+  scale_fill_manual(values = c("skyblue", "pink"))
+```
+
+```{r}
+# cog skills
+ggplot(df, aes(x = age_group, y = cog_index, fill = gender)) +
+  geom_boxplot() +
+  labs(
+    title = "Cognitive Skills by Gender and Age Group",
+    x = "Age Group",
+    y = "Cognitive Skills"
+  ) +
+  theme_minimal() +
+  scale_fill_manual(values = c("skyblue", "pink"))
+
+#life satisfaction
+ggplot(df, aes(x = age_group, y = ls, fill = gender)) +
+  geom_boxplot() +
+  labs(
+    title = "Life Satisfaction by Gender and Age Group",
+    x = "Age Group",
+    y = "Life Satisfaction (0-10 Scale)"
+  ) +
+  theme_minimal() +
+  scale_fill_manual(values = c("skyblue", "pink"))
+
+```
+
+# Additional Inspection
+
+## Income group
+
+Life satisfaction by income group
+
+```{r}
+ggplot(df, aes(x = income_group, y = ls)) +
+  geom_boxplot(fill = "skyblue") +
+  labs(
+    title = "Life Satisfaction by Income Group",
+    x = "Income Group",
+    y = "Life Satisfaction"
+  ) +
+  theme_minimal()
+```
+
+# Save file
+
+```{r}
+write.csv(df, "df_new.csv", row.names = FALSE)
+```
+
+# References
+
+[1] Field, A. P. (2009). *Discovering statistics using SPSS: (and sex and drugs and Rock N' Roll)* (3rd ed.). SAGE.
+
+# Additional Mandatory References
+
+Bergmann, M., A. Scherpenzeel and A. Börsch-Supan (Eds.) (2019). *SHARE Wave 7 Methodology: Panel Innovations and Life Histories*. Munich: MEA, Max Planck Institute for Social Law and Social Policy.
+
+Bergmann, M., T. Kneip, G. De Luca and A. Scherpenzeel (2019). *Survey participation in the Survey of Health, Ageing and Retirement in Europe (SHARE), Wave 1-7*. Based on Release 7.0.0. SHARE Working Paper Series: 41-2019. Munich: MEA, Max Planck Institute for Social Law and Social Policy.
+
+Börsch-Supan, A., M. Brandt, C. Hunkler, T. Kneip, J. Korbmacher, F. Malter, B. Schaan, S. Stuck and S. Zuber (2013). *Data Resource Profile: The Survey of Health, Ageing and Retirement in Europe (SHARE)*. International Journal of Epidemiology. DOI: [**10.1093/ije/dyt088**](https://doi.org/10.1093/ije/dyt088 "Opens external link in new window").
+
+SHARE-ERIC (2024). *Survey of Health, Ageing and Retirement in Europe (SHARE) Wave 7*. Release version: 9.0.0. SHARE-ERIC. Data set. DOI: [**10.6103/SHARE.w7.900**](http://dx.doi.org/10.6103/SHARE.w7.900)

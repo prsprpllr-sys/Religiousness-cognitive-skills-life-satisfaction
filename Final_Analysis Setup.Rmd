@@ -1,0 +1,797 @@
+---
+title: "Thesis_New Setup post-feedback"
+author: "Juyoung Kim"
+date: "`r Sys.Date()`"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Loading
+
+```{r}
+library(haven)      # For .sav file reading
+library(dplyr)      # Data manipulation
+library(tidyr)      # Data wrangling
+library(ggplot2)    # Visualization
+library(psych)      # Summary stats
+```
+
+```{r}
+# save file path 
+path <- "./sharew7_rel9-0-0_ALL_datasets_spss"
+```
+
+Load datasets of SHARE Wave 7 [1]. The methodology document states what the specific variable names are for our interest factors [2].
+
+```{r}
+cf <- read_sav(paste0(path, "/sharew7_rel9-0-0_cf.sav"))
+ac <- read_sav(paste0(path, "/sharew7_rel9-0-0_ac.sav"))
+ex <- read_sav(paste0(path, "/sharew7_rel9-0-0_ex.sav"))
+```
+
+```{r}
+cf <- read_sav(paste0(path, "/sharew7_rel9-0-0_cf.sav"))
+ac <- read_sav(paste0(path, "/sharew7_rel9-0-0_ac.sav"))
+ex <- read_sav(paste0(path, "/sharew7_rel9-0-0_ex.sav"))
+cv_r <- read_sav(paste0(path, "/sharew7_rel9-0-0_cv_r.sav"))  # demographic info
+gv_isced<-read_sav(paste0(path,"/sharew7_rel9-0-0_gv_isced.sav")) # for edu level
+ph<-read_sav(paste0(path,"/sharew7_rel9-0-0_ph.sav")) #for health status
+hh <- read_sav(paste0(path, "/sharew7_rel9-0-0_hh.sav")) #income
+
+#-----After 2nd Meeting--------------#
+# for CC728_ (importance of religion while growing up)
+cc <- read_sav(paste0(path, "/sharew7_rel9-0-0_cc.sav"))
+```
+
+## 1. Merge Datasets
+
+```{r}
+df <- cf %>%
+  left_join(ac, by = "mergeid") %>%
+  left_join(ex, by = "mergeid") %>%
+  left_join(cv_r, by = "mergeid") %>%
+  left_join(gv_isced, by = "mergeid") %>%
+  left_join(ph, by = "mergeid") %>%
+  left_join(cc, by = "mergeid") %>%
+  left_join(hh, by = "mergeid")
+```
+
+# Variable Pre-Inspection
+
+Inspecting raw counts before merging & filtering
+
+## 1. Helper Function
+
+Inspect raw and valid values of a variable
+
+```{r}
+# separate valid vs. invalid (< 0)
+inspect <- function(var, var_name = deparse(substitute(var))) {
+  cat("\n======================\n")
+  cat("Inspecting:", var_name, "\n\n")
+  cat("All responses:\n")
+  print(table(var, useNA = "ifany"))
+  print(summary(var))
+  cat("Non-missing:", sum(!is.na(var)), "\n\n")
+  valid <- var[!is.na(var) & var >= 0]
+  cat("Valid responses:\n")
+  print(table(valid))
+  print(summary(valid))
+  cat("Valid count:", length(valid), "\n")
+  cat("======================\n")
+}
+```
+
+## 2. Key Vars
+
+```{r}
+# Religiousness
+inspect(ex$ex029_, var_name = "Frequency of Prayer (ex029_)")
+inspect(cc$cc728_, var_name = "Childhood Religion Importance (cc728_)")
+
+# Life satisfaction
+inspect(ac$ac012_, var_name = "Life Satisfaction (ac012_)")
+```
+
+### Cognitive Skills
+
+```{r}
+# Memory
+memory_vars <- c("cf104tot", "cf105tot", "cf106tot", "cf107tot",
+                 "cf113tot", "cf114tot", "cf115tot", "cf116tot")
+cat("\nMemory Items:\n")
+sapply(cf[memory_vars], function(x) sum(!is.na(x)))
+```
+
+```{r}
+# Verbal fluency
+inspect(cf$cf010_, var_name = "Verbal Fluency (cf010_)")
+```
+
+```{r}
+# Numeracy
+numeracy_vars <- c("cf012_", "cf013_", "cf014_", "cf015_")
+cat("\nNumeracy Items:\n")
+sapply(cf[numeracy_vars], function(x) sum(!is.na(x)))
+```
+
+According to the routing of CF [3]:
+
+-   The whole participants of CF were assigned to 2 different groups (Test-history & Test-regular) - according to prior participation & cognitive testing history in past SHARE waves.
+
+    -   Test-History Group: Returning participants. Were assigned to a lighter version: Memory (Immediate & delayed), Did not receive the numeracy/verbal fluency tasks.
+
+    -   Test-Regular Group: People who did not take the full tests before. Got full cognitive questions (M, N, VF) IF MN101_longitudinal=0 AND MN103_History=0
+
+-   **Memory** - randomly assigned to 4 sub-groups
+
+-   **Numeracy** - participant needed to correctly answer previous (Numeracy) question in order to proceed to the next N questions (conditional branching: cf012 (correct) \> cf014 \> cf015 or cf012(wrong) \> cf013)
+
+## 3. Control Vars
+
+```{r}
+# Demographics
+inspect(cv_r$age2017, var_name = "Age")
+inspect(cv_r$gender, var_name = "Gender")
+inspect(cv_r$country, var_name = "Country")
+```
+
+```{r}
+# Education
+inspect(gv_isced$isced2011_r, var_name = "Education")
+
+# Health
+inspect(ph$ph003_, var_name = "Health Status")
+```
+
+```{r}
+# Income
+summary(hh$hh017e)
+cat("Non-NA count (incl. negative codes):", sum(!is.na(hh$hh017e)), "\n")
+
+# Valid responses: income >= 0
+valid_income <- hh$hh017e[!is.na(hh$hh017e) & hh$hh017e >= 0]
+cat("Valid count (income):", length(valid_income), "\n")
+```
+
+# Variable Construction
+
+## 1. Key Variables
+
+### 1) Religiousness
+
+**Frequency of prayer:** ex029 [4]
+
+-   1: More than once a day
+
+-   2: Once daily
+
+-   3: A couple of times a week
+
+-   4: Once a week
+
+-   5: Less than once a week
+
+-   6: Never
+
+-\> Disregarded the approach because of too small sample size
+
+**Childhood importance of Religion:** cc728\_ [5]
+
+-   1: Very important
+
+-   2: Somewhat important
+
+-   3: Not very important
+
+-   4: Not at all important
+
+```{r}
+table(df$cc728_)  #Need to remove -2 and -1
+```
+
+```{r}
+# Create a temporary indicator
+df <- df %>%
+  mutate(child_sig = ifelse(cc728_ >= 1, cc728_, NA))  # keep other vars
+
+table(df$child_sig)
+```
+
+```{r}
+# reverse child_sig code (1 to 4 becomes 4: Not at all important to 1: Very Important)
+df <- df %>%
+  mutate(child_sig_rev = 5 - child_sig)
+
+table(df$child_sig_rev) 
+```
+
+```{r}
+df$child_sig <- df$child_sig_rev
+table(df$child_sig_rev) 
+```
+
+### 2) Cognitive Skills
+
+1 person receives 1 pair of memory tasks (immediate + delayed recall) [3]
+
+#### a.1) Memory recall (immediate)
+
+```{r}
+df <- df %>%
+  mutate(mem_immediate = coalesce(cf104tot, cf105tot, cf106tot, cf107tot))
+
+table(df$mem_immediate)
+```
+
+#### a.2) Memory recall (delayed)
+
+```{r}
+df <- df %>%
+  mutate(mem_delayed = coalesce(cf113tot, cf114tot, cf115tot, cf116tot))
+
+table(df$mem_delayed)
+```
+
+#### a.3) Memory average score
+
+```{r}
+df <- df %>%
+  mutate(mem_avg = rowMeans(cbind(mem_immediate, mem_delayed), na.rm = TRUE))
+
+table(df$mem_avg)
+sum(!is.na(df$mem_avg)) 
+```
+
+All individuals assigned to CF module received the memory related Questions.
+
+#### b) Verbal Fluency
+
+Not assigned to Test-History group.
+
+```{r}
+table(df$cf010_)
+summary(df$cf010_)
+sum(!is.na(df$cf010_))
+```
+
+#### c) Numeracy
+
+```{r}
+summary(df$cf012_)
+summary(df$cf013_)
+summary(df$cf014_)
+summary(df$cf015_)
+
+sum(!is.na(df$cf012_))
+sum(!is.na(df$cf013_))
+sum(!is.na(df$cf014_))
+sum(!is.na(df$cf014_))
+
+sum(!is.na(df$cf012_))+sum(!is.na(df$cf013_)) +sum(!is.na(df$cf014_)) +sum(!is.na(df$cf014_))
+```
+
+```{r}
+df <- df %>%
+  mutate(across(c(cf012_, cf013_, cf014_, cf015_), ~ ifelse(. < 0, NA, .))) %>%
+  mutate(
+    cf012_score = ifelse(cf012_ == 1, 1, 0),
+
+    # If CF012 wrong → CF013
+    cf013_score = ifelse(cf012_ == 0 & cf013_ == 1, 1, 0),
+
+    # If CF012 correct → CF014 correct ->  CF015
+    cf014_score = ifelse(cf012_ == 1 & cf014_ == 1, 1, 0),
+    cf015_score = ifelse(cf012_ == 1 & cf014_ == 1 & cf015_ == 1, 1, 0)
+  ) %>%
+  mutate(
+    numeracy = cf012_score + cf013_score + cf014_score + cf015_score
+  )
+
+
+table(df$numeracy)  
+```
+
+Not many respondents because of the routing. Only Test-regular \> (MN101_Longitudinal = 0) AND (MN103_History = 0) respondents receive the Numeracy tasks.
+
+#### Final Composite Cognitive Index
+
+Decided to only use memory average for the composite cognitive index
+
+```{r}
+df <- df %>%
+  mutate(
+    cog_index = as.numeric(scale(mem_avg))
+  )
+
+summary(df$cog_index)
+sum(!is.na(df$cog_index))  
+```
+
+### 3) Life Satisfaction
+
+Scale of 0\~10 [6].
+
+```{r}
+df <- df %>%
+  rename(ls = ac012_) %>%
+  filter(ls >= 0 & ls <= 10)
+
+table(df$ls)
+```
+
+## 2. Control Variables
+
+### Gender
+
+```{r}
+df <- df %>%
+  mutate(
+    gender = factor(gender, levels = c(1, 2), labels = c("male", "female"))
+  )
+```
+
+### Country
+
+```{r}
+df <- df %>%
+  rename(country = country.y.y) %>%
+  mutate(
+    country = as.factor(country)
+  )
+
+#   `25` = "Israel"
+df <- df %>% filter(country != 25)
+```
+
+### Age groups
+
+```{r}
+df <- df %>%  rename(age = age2017)
+```
+
+```{r}
+table(df$age)
+```
+
+Need to filter out people under 50.
+
+```{r}
+df <- df %>% filter(age >= 50)
+```
+
+```{r}
+df <- df %>%
+  mutate(
+    age_group = case_when(
+      age < 65 ~ "Under 65",
+      age >= 65 & age < 75 ~ "65 to 74",
+      age >= 75 ~ "Plus 75",
+      TRUE ~ NA_character_
+    )
+  )
+```
+
+### Income
+
+```{r}
+df <- df %>%
+  rename(income = hh017e )
+
+ggplot(df, aes(x = income)) +
+ geom_histogram(bins = 30, fill = "green", color = "white") +
+ labs(
+ title = "Distribution of Monthly Household Income",
+ x = "Monthly Household Income (EUR)",
+ y = "Count"
+ ) +
+ theme_minimal()
+```
+
+Extremely disproportionate distribution
+
+```{r}
+#check extreme values
+quantile(df$income, probs = c(0.99, 0.995), na.rm = TRUE)
+```
+
+Use 27000 as the threshold.
+
+```{r}
+df <- df %>%
+  mutate(
+    income = ifelse(income < 0 | income > 26985.7 , NA, income)
+  )
+
+# income group by country
+df <- df %>%
+  group_by(country) %>%
+  mutate(income_group = ntile(income, 4)) %>%
+  ungroup()
+```
+
+```{r}
+# New histrogram
+ggplot(df, aes(x = income)) +
+ geom_histogram(bins = 30, fill = "green", color = "white") +
+ labs(
+ title = "Distribution of Monthly Household Income",
+ x = "Monthly Household Income (EUR)",
+ y = "Count"
+ ) +
+ theme_minimal()
+```
+
+### Education
+
+```{r}
+df <- df %>%
+  rename(edu = isced2011_r) %>%
+  filter(edu >= 0 & edu <= 8)
+
+table(df$edu)
+```
+
+```{r}
+df <- df %>%
+  mutate(
+    edu_label = case_when(
+      edu == 0 ~ "Early childhood",
+      edu == 1 ~ "Primary",
+      edu == 2 ~ "Lower secondary",
+      edu == 3 ~ "Upper secondary",
+      edu == 4 ~ "Post-secondary non-tertiary",
+      edu == 5 ~ "Short-cycle tertiary",
+      edu == 6 ~ "Bachelor or equivalent",
+      edu == 7 ~ "Master or equivalent",
+      edu == 8 ~ "Doctoral or equivalent"
+    )
+  )
+```
+
+```{r}
+df <- df %>%
+  mutate(
+    edu_group = case_when(
+      edu <= 2 ~ "Low",
+      edu == 3 ~ "Medium",
+      edu >= 4 ~ "High"
+    )
+  )
+```
+
+### Health
+
+```{r}
+df <- df %>%
+  rename(health = ph003_) %>%
+  filter(health > 0)
+
+table(df$health)  # need to remove -2 and -1 
+```
+
+```{r}
+# Reverse code health (1 to 5 -> 5 to 1)
+df <- df %>%
+  mutate(health_rev = 6 - health)
+
+table(df$health_rev)
+```
+
+```{r}
+df$health <- df$health_rev
+table(df$health)
+```
+
+```{r}
+#re-create labels
+df <- df %>%
+  mutate(
+    health_label = case_when(
+      health == 1 ~ "Poor",
+      health == 2 ~ "Fair",
+      health == 3 ~ "Good",
+      health == 4 ~ "Very good",
+      health == 5 ~ "Excellent"
+    )
+  )
+```
+
+### Country & child_sig
+
+```{r}
+df$country <- dplyr::recode(df$country,
+  `11` = "Austria",
+  `12` = "Germany",
+  `13` = "Sweden",
+  `14` = "Netherlands",
+  `15` = "Spain",
+  `16` = "Italy",
+  `17` = "France",
+  `18` = "Denmark",
+  `19` = "Greece",
+  `20` = "Switzerland",
+  `23` = "Belgium",
+  `25` = "Israel",
+  `28` = "Czech Republic",
+  `29` = "Poland",
+  `31` = "Luxembourg",
+  `32` = "Hungary",
+  `33` = "Portugal",
+  `34` = "Slovenia",
+  `35` = "Estonia",
+  `47` = "Croatia",
+  `48` = "Lithuania",
+  `51` = "Bulgaria",
+  `53` = "Cyprus",
+  `55` = "Finland",
+  `57` = "Latvia",
+  `59` = "Malta",
+  `61` = "Romania",
+  `63` = "Slovakia"
+)
+```
+
+```{r}
+# Frequency Table by Country
+df %>%
+  filter(!is.na(child_sig)) %>%
+  group_by(country, child_sig) %>%
+  summarise(n = n()) %>%
+  tidyr::pivot_wider(names_from = child_sig, values_from = n, values_fill = 0) %>%
+  arrange(country)
+```
+
+```{r}
+# Missingness by Country
+df %>%
+  mutate(child_sig_missing = is.na(child_sig)) %>%
+  count(country, child_sig_missing) %>%
+  tidyr::complete(country, child_sig_missing = c(TRUE, FALSE), fill = list(n = 0)) %>%
+  pivot_wider(names_from = child_sig_missing, values_from = n) %>%
+  rename(valid = `FALSE`, missing = `TRUE`)
+```
+
+No country has less than 30 valid observations. -\> should just keep for now
+
+-\> **Feedback**: should use 100 instead of 30
+
+## Incorporate Feedback (6/26)
+
+### a. religiousness - 2 categories
+
+```{r}
+# Binary prayer categories relative to country mean
+df <- df %>%
+  group_by(country) %>%
+  mutate(mean_child_sig_country = mean(child_sig, na.rm = TRUE)) %>%
+  ungroup() %>%
+  mutate(
+    rel_cat = case_when(
+      is.na(child_sig) ~ NA_character_,
+      child_sig < mean_child_sig_country ~ "below_avg",
+      TRUE ~ "above_avg"
+    ),
+    rel_above = ifelse(rel_cat == "above_avg", 1, ifelse(is.na(rel_cat), NA, 0)),
+    rel_below = ifelse(rel_cat == "below_avg", 1, ifelse(is.na(rel_cat), NA, 0))
+  )
+```
+
+### b. Cognitive Skills - 2 categories
+
+```{r}
+# cognitive category dummies relative to country mean (25~75 percentile)
+df <- df %>%
+  group_by(country) %>%
+  mutate(
+    cog_p25 = quantile(cog_index, 0.25, na.rm = TRUE),
+    cog_p75 = quantile(cog_index, 0.75, na.rm = TRUE)
+  ) %>%
+  ungroup() %>%
+  mutate(
+    cog_cat = case_when(
+      is.na(cog_index) ~ NA_character_,
+      cog_index < cog_p25 ~ "below_avg",
+      cog_index > cog_p75 ~ "above_avg",
+      TRUE ~ "mid"
+    ),
+    cog_below = ifelse(cog_cat == "below_avg", 1, ifelse(is.na(cog_cat), NA, 0)),
+    cog_above = ifelse(cog_cat == "above_avg", 1, ifelse(is.na(cog_cat), NA, 0))
+  )
+```
+
+## Incorporate Feedback 7/9
+
+### Compare child_sig and rel_above
+
+```{r}
+# number of valid counts for each variable
+total_child_sig <- sum(!is.na(df$child_sig))
+print(total_child_sig)
+total_rel_above <- sum(!is.na(df$rel_above))
+print(total_rel_above)
+```
+
+```{r}
+#number valid counts
+total_child_sig <- sum(!is.na(df$child_sig))
+total_rel_above <- sum(!is.na(df$rel_above))
+total_rel_below <- sum(!is.na(df$rel_below))
+
+# summary table
+country_dist_summary <- df %>%
+  group_by(country) %>%
+  summarise(
+    `child_sig (n)` = sum(!is.na(child_sig)),
+    `child_sig (%)` = round(100 * sum(!is.na(child_sig)) / total_child_sig, 2),
+    
+    `rel_above (n)` = sum(!is.na(rel_above)),
+    `rel_above (%)` = round(100 * sum(!is.na(rel_above)) / total_rel_above, 2),
+    
+    `rel_below (n)` = sum(!is.na(rel_below)),
+    `rel_below (%)` = round(100 * sum(!is.na(rel_below)) / total_rel_below, 2)
+  ) %>%
+  arrange(desc(`child_sig (n)`))
+
+# summary table
+knitr::kable(
+  country_dist_summary,
+  caption = "Valid Counts and Percentages by Country for 'child_sig', 'rel_above', and 'rel_below'"
+)
+
+```
+
+# Data Selection & Cleaning
+
+```{r}
+#convert demographic variables
+ df<-df%>%
+ mutate(
+ age= as.numeric(age),
+ gender= factor(gender),
+ income= as.numeric(income)
+ )
+```
+
+```{r}
+#Should filter out NAs & only keep interest variables
+df <- df %>%
+  dplyr::select(
+    child_sig, cog_index, ls,
+    age, age_group, gender,
+    country,
+    edu, edu_label, edu_group,
+    health, health_label,
+    income, income_group,
+    rel_above, rel_below,
+    cog_above, cog_below,
+    mem_immediate, mem_delayed
+  ) %>%
+  filter(
+    !is.na(child_sig),
+    !is.na(cog_index),
+    !is.na(ls),
+    !is.na(age),
+    !is.na(age_group),
+    !is.na(gender),
+    !is.na(country),
+    !is.na(edu),
+    !is.na(edu_label),
+    !is.na(edu_group),
+    !is.na(health),
+    !is.na(health_label),
+    !is.na(income),
+    !is.na(income_group),
+    !is.na(rel_above),
+    !is.na(rel_below),
+    !is.na(cog_above),
+    !is.na(cog_below)
+  )
+```
+
+Filter out countries with sample size \< 100
+
+```{r}
+df <- df %>%
+  group_by(country) %>%
+  filter(n() >= 100) %>%
+  ungroup() 
+```
+
+# Memory Variables Inspection
+
+```{r}
+ggplot(df, aes(x = mem_immediate)) +
+  geom_histogram(binwidth = 1, fill = "skyblue", color = "white") +
+  labs(title = "Immediate Recall Score Distribution", x = "Immediate Recall", y = "Count") +
+  theme_minimal()
+```
+
+```{r}
+ggplot(df, aes(x = mem_delayed)) +
+  geom_histogram(binwidth = 1, fill = "salmon", color = "white") +
+  labs(title = "Delayed Recall Score Distribution", x = "Delayed Recall", y = "Count") +
+  theme_minimal()
+```
+
+# Final Data Selection
+
+```{r}
+df <- df %>%
+  dplyr::select(
+    child_sig, cog_index, ls,
+    age, age_group, gender,
+    country,
+    edu, edu_label, edu_group,
+    health, health_label,
+    income, income_group,
+    rel_above, rel_below,
+    cog_above, cog_below
+  ) %>%
+  filter(
+    !is.na(child_sig),
+    !is.na(cog_index),
+    !is.na(ls),
+    !is.na(age),
+    !is.na(age_group),
+    !is.na(gender),
+    !is.na(country),
+    !is.na(edu),
+    !is.na(edu_label),
+    !is.na(edu_group),
+    !is.na(health),
+    !is.na(health_label),
+    !is.na(income),
+    !is.na(income_group),
+    !is.na(rel_above),
+    !is.na(rel_below),
+    !is.na(cog_above),
+    !is.na(cog_below)
+  )
+
+str(df)
+```
+
+# Variable Post-Inspection
+
+```{r}
+post_vars <- c("child_sig", "cog_index", "ls", "age", "gender", "country", "edu_group", "health", "income_group")
+
+for (v in post_vars) {
+  cat("\n---", v, "---\n")
+  print(summary(df[[v]]))
+  cat("Valid responses:", sum(!is.na(df[[v]])), "\n")
+}
+```
+
+# Save File
+
+```{r}
+write.csv(df, "df_cleaned.csv", row.names = FALSE)
+cat("Final sample size:", nrow(df), "\n")
+```
+
+# References
+
+[1] SHARE-ERIC (2024). *Survey of Health, Ageing and Retirement in Europe (SHARE) Wave 7*. Release version: 9.0.0. SHARE-ERIC. Data set. DOI: [10.6103/SHARE.w7.900](http://dx.doi.org/10.6103/SHARE.w7.900)
+
+[2] Bergmann, M., T. Kneip, G. De Luca and A. Scherpenzeel (2019). *Survey participation in the Survey of Health, Ageing and Retirement in Europe (SHARE), Wave 1-7*. Based on Release 7.0.0. SHARE Working Paper Series: 41-2019. Munich: MEA, Max Planck Institute for Social Law and Social Policy.
+
+[3] SHARE-ERIC. (2019). *SHARE Wave 7: Module CF -- Cognitive function*. SBI. <https://www.share-datadocutool.org/control-construct-schemes/view/161>
+
+[4] SHARE-ERIC. (2019). *SHARE Wave 7: Module EX-- Expectations*. SBI. <https://www.share-datadocutool.org/control-construct-schemes/view/195>
+
+[5] SHARE-ERIC. (2019). *SHARE Wave 7: Module CC -- Childhood Circumstances*. SBI. <https://www.share-datadocutool.org/control-construct-schemes/view/209>
+
+[6] SHARE-ERIC. (2019). *SHARE Wave 7: Module AC -- Activities*. SBI. <https://www.share-datadocutool.org/control-construct-schemes/view/189>
+
+# Additional Mandatory References
+
+Bergmann, M., A. Scherpenzeel and A. Börsch-Supan (Eds.) (2019). *SHARE Wave 7 Methodology: Panel Innovations and Life Histories*. Munich: MEA, Max Planck Institute for Social Law and Social Policy.
+
+Börsch-Supan, A., M. Brandt, C. Hunkler, T. Kneip, J. Korbmacher, F. Malter, B. Schaan, S. Stuck and S. Zuber (2013). *Data Resource Profile: The Survey of Health, Ageing and Retirement in Europe (SHARE)*. International Journal of Epidemiology. DOI: [**10.1093/ije/dyt088**](https://doi.org/10.1093/ije/dyt088 "Opens external link in new window").

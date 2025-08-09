@@ -1,0 +1,450 @@
+---
+title: "Data Analysis_CRM"
+author: "Juyoung Kim"
+date: "`r Sys.Date()`"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# New CRM Analysis
+
+## Loading
+
+```{r}
+# Libraries
+library(corrplot) # For correlation visualization
+library(mediation) # For mediation analysis
+library(car)      # For VIF check
+library(psych)
+library(dplyr)  # For data manipulation 
+library(ggplot2)
+library(lmtest)     # For ANOVA
+library(sandwich)   # For robust SEs
+library(moments)
+```
+
+```{r}
+df <- read.csv("df_new.csv")
+```
+
+```{r}
+str(df)
+nrow(df) 
+```
+
+## Filter Subsets.
+
+```{r}
+df <- df %>%
+  mutate(
+    country = factor(country),
+    age_group = factor(age_group),
+    gender = factor(gender),
+    edu_group = factor(edu_group),
+    health_label = factor(health_label)
+  )
+
+str(df)
+```
+
+# 1. Correlation Analysis
+
+**Procedure for Correlation Analysis [1]**
+
+1.  **Choose Variables**
+2.  **Check data assumptions** - linearity, normality, no significant outliers, interval/ratio scale (variables are not ordinal)
+
+-   if met -\> Pearson correlation
+-   if not -\> Spearman's rank correlation
+
+3.  **Calculate correlations**
+4.  **Visualize correlations**
+5.  **Report results** - including:
+    -   correlation coefficient (r)
+    -   significance level (p-value)
+    -   sample size (n)
+
+### Step 1: Choose Variables
+
+**Our variables:** child_sig, cog_index, ls
+
+```{r}
+# list of variables
+vars <- c("child_sig", "cog_index", "ls")
+```
+
+### Step 2: Data Assumptions
+
+-   linearity
+
+-   normality
+
+-   no significant outliers
+
+-   interval/ratio scale
+
+### Normality check
+
+-   Skewness \> \|1\| → substantial asymmetry
+
+-   Kurtosis \> \|3\| → heavy tails
+
+Shapiro-Wilk test doesn't work because the sample is too big (n \> 5k).
+
+```{r}
+# Histogram, density, Q-Q Plot, Skewness/Kurtosis
+for (v in vars) {
+  var_data <- df[[v]]
+  
+  cat("\n===================================\n")
+  cat("-> Variable:", v, "\n")
+  
+  #skewness and Kurtosis
+  cat("Skewness:", round(skewness(var_data, na.rm = TRUE), 3), "\n")
+  cat("Kurtosis:", round(kurtosis(var_data, na.rm = TRUE), 3), "\n")
+  
+  # Histogram with density
+  p1 <- ggplot(df, aes_string(x = v)) +
+    geom_histogram(aes(y = ..density..), bins = 30, fill = "skyblue", color = "white") +
+    geom_density(color = "red", size = 1) +
+    labs(title = paste("Histogram + Density of", v), x = v, y = "Density") +
+    theme_minimal()
+  print(p1)
+  
+  #Q-Q plot
+  qqnorm(var_data, main = paste("Q–Q Plot of", v))
+  qqline(var_data, col = "red", lwd = 2)
+}
+```
+
+Shows non-normal, normal, non-normal distribution \> only cog_index is close to normal.
+
+### Linearity Check
+
+```{r}
+# scatterplots for linearity check
+pairs(df[, c("child_sig", "cog_index", "ls")], main = "Scatterplot Matrix")
+```
+
+Suggests weak or non-linear relationship. Overall no strong linear relationship.
+
+-\> Therefore, the Spearman Correlation method will be used.
+
+### Step 3: Conduct Correlation Analysis
+
+```{r}
+cor_matrix <- cor(df[, c("child_sig", "cog_index", "ls")], method = "spearman")
+
+colnames(cor_matrix) <- c("Religiousness", "Cognitive Index", "Life Satisfaction")
+rownames(cor_matrix) <- c("Religiousness", "Cognitive Index", "Life Satisfaction")
+cor_matrix
+```
+
+### Step 4: Visualize Correlation
+
+```{r}
+# plot Spearman correlation matrix
+corrplot(cor_matrix, method = "number", type = "lower", tl.cex = 0.8)
+```
+
+### Step 5: Results
+
+```{r}
+# sample size
+nrow(df) 
+```
+
+```{r}
+cor.test(df$child_sig, df$cog_index, method = "spearman")
+cor.test(df$child_sig, df$ls, method = "spearman")
+cor.test(df$cog_index, df$ls, method = "spearman")
+```
+
+rho = Pearson correlation coefficient for a sample population
+
+-   Religiousness \<-\> cognitive skills: *rho* = -0.178, *p* \< .001
+
+    -   -\> Significant negative correlation
+
+-   Childhood significance \<-\> life satisfaction: *rho* = -0.0002, *p = .824*
+
+    -   -\> Non-significant correlation
+
+-   Cognitive skills \<-\>life satisfaction: *rho* = 0.163, *p \< .001*
+
+    -   -\> Significant positive correlation
+
+***So our initial assumption that Religiousness -\> life satisfaction is not supported (Reject H1)***
+
+# 2. Regression Analysis (OLS)
+
+Feedback -\> Simple OLS
+
+The whole procedure [1]:
+
+### **Step 1: Define Variables**
+
+```{r}
+summary(df)
+```
+
+The following variables are in the MLR:
+
+-   DV: ls
+
+-   Main IV: pray -\> child_sig, rel_above
+
+-   Mediating IV: cognitive skills -\> cog_above, cog_below
+
+-   Controls: `age`, `gender`, `country`, `edu_group`, `health_label,` `income_group`
+
+Need to choose between the 2 models
+
+-\> **Feedback: use rel_above for cross country comparison**
+
+```{r}
+model_final2 <- lm(ls ~ rel_above + cog_above + cog_below + age + gender + country + edu_group + health +income_group, data = df)
+
+summary(model_final2)
+```
+
+### Step 2: Final Models Assumptions Check
+
+**Assumptions:**
+
+-   Independence of observations (no autocorrelation)
+
+-   Normality
+
+-   Linearity
+
+-   Homoscedasticity
+
+***Interpretation Guidelines:***
+
+-   *Residual Plots - should be randomly scattered*
+
+-   *VIF \<5 (ideally \< 2.5)*
+
+    -   VIF = 1: no multicollinerarity
+
+    -   VIF \> 5: high multicollinearity
+
+-   *Shapiro-Wilk test - p\> .05 (normal residuals)*
+
+-   *Breusch-Pagan (bptest) - P \> .05 (homoscedasticity)*
+
+-   *Durbin-Watson 'approximately equivalent to' 2 (no autocorrelation)*
+
+For model_final:
+
+```{r}
+model_final <- model_final2
+```
+
+```{r}
+# 1. residual plots
+plot(model_final)
+```
+
+-   Residual vs Fitted: Clear funnel shape & red LOESS line shows curvature -\> non-linearity & heteroscedasticity
+
+-   Normal Q-Q plot: mostly follow diagonal line, but some deviation at both tails -\> non-normality in residuals -\> mildly violate normality assumption
+
+-   Scale-location plot: not flat red line, spread increases at lower fitted values -\> heteroscedasiticity
+
+-   Residuals vs Leverage: no points are beyond cook's distance threshold -\> no highly influential outliers
+
+```{r}
+# 2. VIF
+vif(model_final)
+```
+
+All adj.VIF values \< 2 -\> no multicollinearity issue
+
+3.  **Normality check**
+
+```{r}
+res <- residuals(model_final)
+cat("Skewness:", round(skewness(res), 3), "\n")
+cat("Kurtosis:", round(kurtosis(res), 3), "\n")
+```
+
+Skewness = -0.665 -\> moderate left-skew in residual distribution\
+Kurtosis = 4.272 -\> heavier tails than a normal distribution (leptokurtic).
+
+```{r}
+# Q-Q plot
+qqnorm(residuals(model_final))
+qqline(residuals(model_final), col = "red", lwd = 2)
+```
+
+```{r}
+#historgram
+hist(residuals(model_final), breaks = 50, col = "skyblue", main = "Histogram of Residuals", xlab = "Residuals")
+```
+
+```{r}
+# 4. Breusch-Pagan Test
+bptest(model_final)
+```
+
+p \< .05 -\> residuals do not have constant variance (heteroscedasticity).
+
+```{r}
+# 5. Durbin-Watson Test
+dwtest(model_final)
+```
+
+p \> .05 -\> no significant autocorrelation.
+
+DW =2 -\> no autocorrelation
+
+\>\> No significant autocorrelation
+
+\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\--
+
+**Final interpretation**
+
+-   Linearity - violated
+
+-   Normality of Residuals - mildly violated
+
+-   Homoscedasticity - violated
+
+-   No influential outliers - met
+
+-   Multicollinearity - met
+
+Model results can be interpreted but with caution.
+
+# 3. Mediation Analysis
+
+Use Hayes-style mediation (2013) - include control variables and use bootstrapping method.
+
+### Step 1: Check Variable Relationships
+
+Already did with Spearman correlations.
+
+### Step 2: Fit Regressions
+
+**Mediator model: cog_index \~ child_sig + controls**
+
+**Outcome model: ls \~ child_sig + cog_index + controls (includes both IV and mediator)**
+
+Trial&Error: Error appears because of too many country levels.
+
+As `country` was not significant in MLR -\> drop it.
+
+```{r}
+# Model c: Total effect (IV → DV)
+model_c <- lm(ls ~ child_sig + age + gender + income_group + health + edu_group, data = df)
+
+summary(model_c)
+```
+
+Higher religiousness -\> greater life satisfaction
+
+```{r}
+# Model a: IV → Mediator
+model_a <- lm(cog_index ~ child_sig + age + gender + income_group + health + edu_group, data = df)
+
+summary(model_a) 
+```
+
+Higher religiousness -\>less cog_index
+
+```{r}
+# Model b + c': DV ~ Mediator + IV
+model_b_cprime <- lm(ls ~ child_sig + cog_index + age + gender + income_group + health + edu_group, data = df)
+
+summary(model_b_cprime) 
+```
+
+Religiousness -\> life satisfaction(+)
+
+Cognitive index -\> life satisfaction (+) #bigger effect
+
+### Step 3: Conduct Mediation Analysis
+
+```{r}
+# mediation analysis
+med_result <- mediation::mediate(
+  model.m = model_a,
+  model.y = model_b_cprime,
+  treat = "child_sig",
+  mediator = "cog_index",
+  boot = TRUE,
+  sims = 1000
+)
+
+summary(med_result)
+```
+
+All p-values \< .001 -\> significant
+
+-   **ACME** = -0.0136, p \< .001
+
+    -   Significant indirect effect of child_sig -\> ls through cog_skills (partial mediation), opposing direction
+
+-   **ADE** = 0.0568, p \< .001
+
+    -   Significant direct effect
+
+-   **Total Effect** = 0.0432, p \< .001
+
+    -   overall higher childhood R is significantly associated with higher ls
+
+-   **Prop. Mediated** = -0.3139 (\~31%)
+
+    -   around 31% of total effect is mediated through cog skills. (opposing direction)
+
+**-*\> Supports H3!***
+
+### Step 4: Model Fit
+
+```{r}
+model_a %>%
+  summary() %>%
+  with(cat("Model a (IV -> Mediator): R-squared =", round(r.squared, 3),
+           ", F(", fstatistic[2], ",", fstatistic[3], ") =",
+           round(fstatistic[1], 2),
+           ", p =", signif(pf(fstatistic[1], fstatistic[2], fstatistic[3], lower.tail = FALSE), 3), "\n"))
+
+model_c %>%
+  summary() %>%
+  with(cat("Model c (Total Effect): R-squared =", round(r.squared, 3),
+           ", F(", fstatistic[2], ",", fstatistic[3], ") =",
+           round(fstatistic[1], 2),
+           ", p =", signif(pf(fstatistic[1], fstatistic[2], fstatistic[3], lower.tail = FALSE), 3), "\n"))
+
+model_b_cprime %>%
+  summary() %>%
+  with(cat("Model b & c (Mediator + IV -> DV):R-squared =", round(r.squared, 3),
+           ", F(", fstatistic[2], ",", fstatistic[3], ") =",
+           round(fstatistic[1], 2),
+           ", p =", signif(pf(fstatistic[1], fstatistic[2], fstatistic[3], lower.tail = FALSE), 3), "\n"))
+```
+
+```{r}
+write.csv(df, "df_fin.csv")
+```
+
+# References
+
+[1] Field, A. P. (2009). *Discovering statistics using SPSS: (and sex and drugs and Rock N' Roll)* (3rd ed.). SAGE.
+
+# Additional Mandatory References
+
+Bergmann, M., A. Scherpenzeel and A. Börsch-Supan (Eds.) (2019). *SHARE Wave 7 Methodology: Panel Innovations and Life Histories*. Munich: MEA, Max Planck Institute for Social Law and Social Policy.
+
+Bergmann, M., T. Kneip, G. De Luca and A. Scherpenzeel (2019). *Survey participation in the Survey of Health, Ageing and Retirement in Europe (SHARE), Wave 1-7*. Based on Release 7.0.0. SHARE Working Paper Series: 41-2019. Munich: MEA, Max Planck Institute for Social Law and Social Policy.
+
+Börsch-Supan, A., M. Brandt, C. Hunkler, T. Kneip, J. Korbmacher, F. Malter, B. Schaan, S. Stuck and S. Zuber (2013). *Data Resource Profile: The Survey of Health, Ageing and Retirement in Europe (SHARE)*. International Journal of Epidemiology. DOI: [**10.1093/ije/dyt088**](https://doi.org/10.1093/ije/dyt088 "Opens external link in new window").
+
+SHARE-ERIC (2024). *Survey of Health, Ageing and Retirement in Europe (SHARE) Wave 7*. Release version: 9.0.0. SHARE-ERIC. Data set. DOI: [**10.6103/SHARE.w7.900**](http://dx.doi.org/10.6103/SHARE.w7.900)
